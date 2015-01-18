@@ -1,5 +1,5 @@
 import org.apache.spark.{SparkConf, SparkContext, rdd}
-import Utils.{ columnIndex, distinctColumn, marketReport }
+import Utils.{ columnIndex, distinctColumn, marketReport, timer }
 
 /**
  * alvaro, @alvaromuir 
@@ -22,7 +22,7 @@ object BigMedia {
       sc.textFile("2015/dfa/fields.csv").first().split(",").toList
 
     val dfaData: rdd.RDD[String] =
-      sc.textFile("2015/dfa/*sample.csv").cache()
+      sc.textFile("2015/dfa/*_sample.csv")
 
 
     val serviceRegions: List[String] =
@@ -47,7 +47,9 @@ object BigMedia {
     val invalidDMAS: List[String] =
       distinctColumn("designated_market_area_dma", dfaHeaders, dfaData).filterNot(serviceDMAS.contains(_))
 
-    marketReport(serviceDMAS, dfaHeaders, dfaData)
+    val runReport = timer {
+      marketReport(serviceDMAS, dfaHeaders, dfaData)
+    }
 
   }
 }

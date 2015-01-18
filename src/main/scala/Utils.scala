@@ -8,6 +8,20 @@ import scala.collection.mutable.ArrayBuffer
  */
 
 object Utils {
+
+  /**
+   * Returns time in milliseconds it took a function [A] to run
+   * @param f function to run
+   * @tparam A
+   * @return
+   */
+  def timer[A](f: => A): A = {
+    def now = System.currentTimeMillis()
+    val start = now; val a= f; val end = now
+    println(s"\nExecuted in ${end-start} ms")
+    a
+  }
+
   /** returns a List[String] of serialized RDD row. Specific to DFA data lines with double quotes on some of the
     * site_dfa (publisher) or placement names
     * @param line is the RDD line you want to clean
