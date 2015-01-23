@@ -1,55 +1,39 @@
+import Utils.{buildArgsMap, getDMAS, marketReport, timer}
 import org.apache.spark.{SparkConf, SparkContext, rdd}
-import Utils.{ columnIndex, distinctColumn, marketReport, timer }
-
 /**
  * alvaro, @alvaromuir 
- * created on 1/18/15.
+ * created on 1/18/15
+ * updated on 1/22/15
  */
 
 object BigMedia {
 
   def main(args: Array[String]) {
+    val params = buildArgsMap(args)
+    val dataDir = params("dataDir")
+    val metaRoot = params("metaDir")
+
     val conf = new SparkConf().setAppName("BigMedia")
     val sc = new SparkContext(conf)
 
 
-    val marketsHeaders: List[String] = sc.textFile("2015/dfa/market_fields.csv").first().split(",").toList
+    val marketsHeaders: List[String] = sc.textFile(metaRoot + "/market_fields.csv").first().split(",").toList
+    val marketsData: rdd.RDD[String] = sc.textFile(metaRoot + "/markets.csv")
+    val dfaHeaders: List[String] = sc.textFile(metaRoot + "/fields.csv").first().split(",").toList
+    val dfaData: rdd.RDD[String] = sc.textFile(dataDir)
 
 
-    val marketsData: rdd.RDD[String] = sc.textFile("2015/dfa/markets.csv")
 
-    val dfaHeaders: List[String] =
-      sc.textFile("2015/dfa/fields.csv").first().split(",").toList
+    val digitalDMAS: List[String]  = getDMAS(marketsData).filterNot( _ == ())
 
-    val dfaData: rdd.RDD[String] =
-      sc.textFile("2015/dfa/*_sample.csv")
+//    val validDMAS: List[String] =
+//      distinctColumn("designated_market_area_dma", dfaHeaders, dfaData).filter(digitalDMAS.contains(_))
+//
+//    val invalidDMAS: List[String] =
+//      distinctColumn("designated_market_area_dma", dfaHeaders, dfaData).filterNot(digitalDMAS.contains(_))
 
-
-    val serviceRegions: List[String] =
-      marketsData.map(m => m.split(",")(columnIndex("Region", marketsHeaders))).
-        collect().distinct.toList
-
-    val serviceStates: List[String] =
-      marketsData.map(m => m.split(",")(columnIndex("State", marketsHeaders))).
-        collect().distinct.filter(! _.contains("MD/VA")).toList
-
-    val serviceDMAS: List[String] = marketsData.map(m => {
-      val line = m.split(",")
-      val length = line.length
-      if (length == 7) line(4) else line(3)
-    }).
-      collect().distinct.filter(! _.contains("DC/MD/VA")).toList
-
-
-    val validDMAS: List[String] =
-      distinctColumn("designated_market_area_dma", dfaHeaders, dfaData).filter(serviceDMAS.contains(_))
-
-    val invalidDMAS: List[String] =
-      distinctColumn("designated_market_area_dma", dfaHeaders, dfaData).filterNot(serviceDMAS.contains(_))
-
-    val runReport = timer {
-      marketReport(serviceDMAS, dfaHeaders, dfaData)
-    }
+    timer(marketReport(digitalDMAS, dfaHeaders, dfaData))
 
   }
+
 }
