@@ -12,7 +12,7 @@ object Utils {
 
   /**
    * Returns a Map of params key-value pairs
-   * @params is the Array of args you wish to build from
+   * @param params is the Array of args you wish to build from
    */
   def buildArgsMap(params: Array[String]): mutable.Map[String, String] = {
     val argsMap = mutable.Map[String,String]()
@@ -26,29 +26,29 @@ object Utils {
     })
     argsMap
   }
-  
-  
+
+
   /**
    * Returns time in milliseconds it took a function [A] to run
    * @param f function to run
    * @tparam A
    * @return Human-readable timestamp
    */
-  
+
   def timer[A](f: => A): A = {
     def now = System.currentTimeMillis()
     val start = now; val a= f; val end = now
-    println(s"\nExecuted in ${end-start} ms")
+    println(f"\nExecuted in ${((end-start)/1000)} seconds")
     a
   }
-  
-  
+
+
   /** Returns a List[String] of serialized RDD row. Specific to DFA data lines with double quotes on some of the
     * site_dfa (publisher) or placement names
     * @param line is the RDD line you want to clean
     *
     */
-  
+
   def SerDe(line: String) =  {
     val result = new ArrayBuffer[String]()
 
@@ -100,10 +100,10 @@ object Utils {
   def getDMAS(data: rdd.RDD[String]): List[String] = {
     val results = data.map(m => {
       val line = SerDe(m)
-      val length = line.length
-      if (line(length - 1) == "Yes")
-        if (length == 8) line(4) else line(3)
-    }).collect().distinct.toList
+      if(line(line.length - 1) == "Yes")
+        if(line.length == 8) line(4) else line(3)
+    }).collect().filterNot(_.toString == "()").distinct.toList
+
     results.map(x => x.toString)
   }
 
@@ -117,13 +117,14 @@ object Utils {
     indexedRdd.lookup(num -1)
   }
 
-  
-  /** Returns Int as index of specific column name from a List[String]
-    * @param data the rdd you wish to search
+
+  /** returns Int as index of specific column name from a List[String]
+    * @param field the 'column' you want to get an index for
+    * @param fieldList the 'fields' wish to search
+    * ex: columnIndex("date", dfaHeaders)
     */
-  
-  def columnIndex(field: String, data: List[String]): Int = {
-    data.indexOf(field)
+  def columnIndex(field: String, fieldList: List[String]): Int = {
+    fieldList.indexOf(field)
   }
 
   
@@ -173,13 +174,13 @@ object Utils {
 
   def aggregateColumn(field: String, fieldList: List[String], data: rdd.RDD[String]) =
     data.map(x =>SerDe(x)(columnIndex(field, fieldList)).toInt).
-      collect().reduce(_+_)
+      collect().reduce[Int](_+_)
 
   
   /** Returns a List of String RDD's grouped by selected rdd 'column', e.g. "campaign"
     * or "site_dfa". If 'column' does not exist, returns null.
     * @param field the 'column' you want to sort by
-    * @param data the rdd you wish to sort. dataDfa is the default
+    * @param data the rdd you wish to sort
     */
   
   def dataBy(field: String, fieldList: List[String], data: rdd.RDD[String]): List[rdd.RDD[String]] = {
@@ -201,7 +202,7 @@ object Utils {
   /** Returns a RDD String of out of desired publisher for a specified RDD
     * @param pub the publisher you want to search for
     * @param fieldList the 'fields' available to rdd as a List[String]
-    * @param data the rdd you wish to search. dataDfa is the default
+    * @param data the rdd you wish to search
     */
   
   def getPublisher(pub: String, fieldList: List[String], data: rdd.RDD[String]): rdd.RDD[String] =
@@ -212,7 +213,7 @@ object Utils {
     * @param field the field you want to search for
     * @param fieldList the 'fields' available to rdd as a List[String]
     * @param criteria the field match you want to search for
-    * @param data the rdd you wish to search. dataDfa is the default
+    * @param data the rdd you wish to search
     */
   
   def filterPlacements(field: String, fieldList: List[String], criteria: String, data: rdd.RDD[String]): rdd.RDD[String] = {
@@ -224,44 +225,136 @@ object Utils {
       null
   }
 
+  /** Returns a RDD String filtered by specific month in "YYYY-MM" format
+    * @param fieldList the 'fields' available to rdd as a List[String]
+    * @param data the rdd you wish to search
+    */
+  
+  def filterMonthly(month:String, fieldList: List[String], data: rdd.RDD[String]): rdd.RDD[String] = {
+    data.filter(SerDe(_)(columnIndex("date",fieldList)).substring(0,7) == month)
+  }
+  
   
   /** Returns a RDD String of out of desired buying model for a specified RDD
     * @param model the buy model you want to search for
-    * @param data the rdd you wish to search. dataDfa is the default
+    * @param data the rdd you wish to search
     */
   
   def getBuyModel(model: String, fieldList: List[String], data: rdd.RDD[String]): rdd.RDD[String] =
     data.filter(x => SerDe(x)(columnIndex("placement_cost_structure", fieldList)) == model)
 
   
-  /** generates a snapshot report of specified data set
-    * @param data the data set you wish to report on. dataDFA is the default
-    */
-
-  def marketReport(marketList: List[String], fieldList: List[String], data: rdd.RDD[String]): Any = {
-    val dataIn: rdd.RDD[String]   = validData("designated_market_area_dma", marketList, fieldList, data)
+  def placementEssentials(marketList: List[String], fieldList: List[String], data: rdd.RDD[String]): mutable.Map[String, String] = {
+    val detailsMap = mutable.Map[String,String]()
+    
+    val dataIn: rdd.RDD[String] = validData("designated_market_area_dma", marketList, fieldList, data)
     val dataOut: rdd.RDD[String]= invalidData("designated_market_area_dma", marketList, fieldList, data)
-    val inImps: Int             = aggregateColumn("impressions", fieldList, dataIn)
-    val outImps: Int            = aggregateColumn("impressions", fieldList, dataOut)
-    val ttlImps: Int            = inImps + outImps
-    val pctOutImps: Float       = outImps/ttlImps.toFloat
 
-    val inClicks: Int     = aggregateColumn("clicks", fieldList, dataIn)
-    val outClicks: Int    = aggregateColumn("clicks", fieldList, dataOut)
-    val ttlClicks: Int    = inClicks + outClicks
-    val pctOutClicks: Float = outClicks/ttlClicks.toFloat
+    var inImps: Int         = 0
+    var inClks: Int         = 0
+    var inCTTVLQS: Int      = 0
+    var inVTTVLQS: Int      = 0
+    var inTVAMCTCONV: Int   = 0
+    var inTVAMVTCONV: Int   = 0
+    var inTVNCCTCONV: Int   = 0
+    var inTVNCVTCONV: Int   = 0
+    
+    var outImps: Int        = 0
+    var outClks: Int        = 0
+    var outCTTVLQS: Int     = 0
+    var outVTTVLQS: Int     = 0
+    var outTVAMCTCONV: Int  = 0
+    var outTVAMVTCONV: Int  = 0
+    var outTVNCCTCONV: Int  = 0
+    var outTVNCVTCONV: Int  = 0
 
-    print(f"  imps: Total: ${ ttlImps.toString.padTo(11, " ").mkString } \t" +
-      f"in: ${ inImps.toString.padTo(8, " ").mkString }  \t" +
-      f"out: ${ outImps.toString.padTo(8, " ").mkString } \t" +
-      f"%% out: ${ pctOutImps }%.2f")
+    if(dataIn.count() != 0) {
+      inImps        = aggregateColumn("impressions", fieldList, dataIn)
+      inClks        = aggregateColumn("clicks", fieldList, dataIn)
+      inCTTVLQS     = aggregateColumn("consumer_remarketing_verizon_fios_tv_loopq_success_click_through_conversions", fieldList, dataIn)
+      inVTTVLQS     = aggregateColumn("consumer_remarketing_verizon_fios_tv_loopq_success_view_through_conversions", fieldList, dataIn)
+      inTVAMCTCONV  = aggregateColumn("consumer_order_confirmation_go_fios_tv_order_am_click_through_conversions", fieldList, dataIn)
+      inTVAMVTCONV  = aggregateColumn("consumer_order_confirmation_go_fios_tv_order_am_view_through_conversions", fieldList, dataIn)
+      inTVNCCTCONV  = aggregateColumn("consumer_order_confirmation_go_fios_tv_order_nc_click_through_conversions", fieldList, dataIn)
+      inTVNCVTCONV  = aggregateColumn("consumer_order_confirmation_go_fios_tv_order_nc_view_through_conversions", fieldList, dataIn)
+    }
 
-    print("\n")
+    if(dataOut.count() != 0) {
+      outImps       = aggregateColumn("impressions", fieldList, dataOut)
+      outClks       = aggregateColumn("clicks", fieldList, dataOut)
+      outCTTVLQS    = aggregateColumn("consumer_remarketing_verizon_fios_tv_loopq_success_click_through_conversions", fieldList, dataOut)
+      outVTTVLQS    = aggregateColumn("consumer_remarketing_verizon_fios_tv_loopq_success_view_through_conversions", fieldList, dataOut)
+      outTVAMCTCONV = aggregateColumn("consumer_order_confirmation_go_fios_tv_order_am_click_through_conversions", fieldList, dataOut)
+      outTVAMVTCONV = aggregateColumn("consumer_order_confirmation_go_fios_tv_order_am_view_through_conversions", fieldList, dataOut)
+      outTVNCCTCONV = aggregateColumn("consumer_order_confirmation_go_fios_tv_order_nc_click_through_conversions", fieldList, dataOut)
+      outTVNCVTCONV = aggregateColumn("consumer_order_confirmation_go_fios_tv_order_nc_view_through_conversions", fieldList, dataOut)
+    }
 
-    print(f"clicks: Total: ${ ttlClicks.toString.padTo(11, " ").mkString } \t" +
-      f"in: ${ inClicks.toString.padTo(8, " ").mkString }  \t" +
-      f"out: ${ outClicks.toString.padTo(8, " ").mkString } \t" +
-      f"%% out: ${ pctOutClicks }%.2f")
+    val ttlImps: Int          = inImps + outImps
+    val ttlClks: Int          = inClks + outClks
+    val ttlCTTVLQS: Int       = inCTTVLQS + outCTTVLQS
+    val ttlVTTVLQS: Int       = inVTTVLQS + outVTTVLQS
+    val ttlTVAMCTCONV: Int    = inTVAMCTCONV + outTVAMCTCONV
+    val pctTVAMCTCONV: Float  = inTVAMCTCONV/outTVAMCTCONV.toFloat
+
+    val ttlTVAMVTCONV: Int    = inTVAMVTCONV + outTVAMVTCONV
+    val pctTVAMVTCONV: Float  = inTVAMVTCONV/outTVAMVTCONV.toFloat
+
+    val ttlTVNCCTCONV: Int    = inTVNCCTCONV + outTVNCCTCONV
+    val pctTVNCCTCONV: Float  = inTVNCCTCONV/outTVNCCTCONV.toFloat
+
+    val ttlTVNCVTCONV: Int    = inTVNCVTCONV + outTVNCVTCONV
+    val pctTVNCVTCONV: Float  = inTVNCVTCONV/outTVNCVTCONV.toFloat
+
+    detailsMap.put("ttlImps", ttlImps.toString)
+    detailsMap.put("outImps", outImps.toString)
+    detailsMap.put("ttlClks", ttlClks.toString)
+    detailsMap.put("outClks", outClks.toString)
+    detailsMap.put("ttlCTTVLQS", ttlCTTVLQS.toString)
+    detailsMap.put("outCTTVLQS", outCTTVLQS.toString)
+    detailsMap.put("ttlVTTVLQS", ttlVTTVLQS.toString)
+    detailsMap.put("outVTTVLQS", outVTTVLQS.toString)
+    detailsMap.put("ttlTVCTCONV", (ttlTVAMCTCONV + ttlTVNCCTCONV).toString)
+    detailsMap.put("outTVCTCONV", (outTVAMCTCONV + outTVNCCTCONV).toString)
+    detailsMap.put("ttlTVVTCONV", (ttlTVAMVTCONV + ttlTVNCVTCONV).toString)
+    detailsMap.put("outTVVTCONV", (outTVAMVTCONV + outTVNCVTCONV).toString)
+
+    detailsMap
   }
 
+
+  /** Generates a snapshot report of specified data set
+    * @param data the data set you wish to report on. dataDFA is the default
+    */
+  def snapshotReport(marketList: List[String], fieldList: List[String], data: rdd.RDD[String]): List[String] = {
+    val results = new ArrayBuffer[String]()
+    val months: List[String] = {
+      data.map(x =>SerDe(x)(columnIndex("date",fieldList)).substring(0,7)).collect().distinct.toList
+    }
+
+    months.foreach(month => {
+      val campaigns = distinctColumn("campaign", fieldList, filterMonthly(month, fieldList, data)).sorted
+      campaigns.foreach(campaign => {
+        val campaignRDD = filterPlacements("campaign", fieldList, campaign, data)
+        val publishers = distinctColumn("site_dcm", fieldList, campaignRDD)
+        publishers.foreach(publisher => {
+          val publisherRDD = filterPlacements("site_dcm", fieldList, publisher, campaignRDD)
+          val buyModels = distinctColumn("placement_cost_structure", fieldList, publisherRDD)
+          buyModels.foreach(buyModel => {
+            val buyModelRDD = filterPlacements("placement_cost_structure", fieldList, buyModel, publisherRDD)
+            val report = placementEssentials(marketList, fieldList, buyModelRDD)
+            print(".")
+            results += (s"$month\t$campaign\t$publisher\t$buyModel\t${report("ttlImps")}\t\t${report("outImps")}" +
+              s"\t${report("ttlClks")}\t${report("outClks")}\t${report("ttlCTTVLQS")}\t${report("outCTTVLQS")}" +
+              s"\t${report("ttlVTTVLQS")}\t${report("outVTTVLQS")}\t${report("ttlTVCTCONV")}\t${report("outTVCTCONV")}" +
+              s"\t${report("ttlTVVTCONV")}\t${report("outTVVTCONV")}")
+          })
+        })
+      })
+    })
+    println()
+    println(s"month\tcampaign\tpublisher\tbuy_model\ttotal_imps\tout_imps\ttotal_clks\tout_clks\ttotal_cttvlqs" +
+            s"\tout_cttvlqs\ttotal_vttvlqs\tout_vttvlqs\ttotal_cttvord\tout_cttvord\ttotal_vttvord\tout_vttvord")
+    results.toList
+  }
 }
